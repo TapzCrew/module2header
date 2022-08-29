@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: ${{ matrix.os.name }} ( ${{matrix.os.compiler }} ${{ matrix.kind }}, ${{ matrix.mode }} )
+    name: ${{ matrix.os.name }} ( ${{matrix.os.compiler }}, ${{ matrix.mode }} )
     runs-on: ${{ matrix.os.value }}
     strategy:
       fail-fast: false
@@ -21,7 +21,6 @@ jobs:
            triplet: "x64-linux"
         }
             
-        kind: [static, shared]
         mode: [release, debug, asan]
     steps:
         - name: Install apt deps
@@ -52,7 +51,7 @@ jobs:
         - name: Configure & Build
           id: confandbuild
           run: |
-            xmake f --unity_build=y -v --yes -m ${{ matrix.mode }} -k ${{ matrix.kind }} 
+            xmake f -v --yes -m ${{ matrix.mode }}
             xmake b -v
 
         - name: Install
@@ -64,6 +63,6 @@ jobs:
           id: upload
           uses: actions/upload-artifact@v1
           with:
-            name: ${{ matrix.os.name }}-${{ matrix.os.compiler }}-${{ matrix.kind }}-${{ matrix.mode }}
+            name: ${{ matrix.os.name }}-${{ matrix.os.compiler }}-${{ matrix.mode }}
             path: ${{ runner.workspace }}/Module2Header_Output
  

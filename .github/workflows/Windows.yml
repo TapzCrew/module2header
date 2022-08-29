@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: ${{ matrix.os.name }} ( ${{matrix.os.compiler }} ${{ matrix.kind }}, ${{ matrix.mode }} )
+    name: ${{ matrix.os.name }} ( ${{matrix.os.compiler }}, ${{ matrix.mode }} )
     runs-on: ${{ matrix.os.value }}
     strategy:
       fail-fast: false
@@ -27,7 +27,6 @@ jobs:
            triplet: "x64-windows"
         }
             
-        kind: [static, shared]
         mode: [release, debug, asan]
     steps:
         - name: Install msvc
@@ -45,10 +44,6 @@ jobs:
           id: confandbuild
           run: |
             $VS_RUNTIME = "MD"
-            if("${{ matrix.kind }}" -eq "static") {
-                $VS_RUNTIME = "MT"
-            }
-
             if("${{ matrix.os.compiler }}" -eq "MinGW") {
               xrepo install --yes llvm-mingw
               $MINGW_INSTALL_DIR = xrepo info llvm-mingw | Out-String
@@ -58,9 +53,9 @@ jobs:
               $MINGW_INSTALL_DIR = $MINGW_INSTALL_DIR -replace '\x1b\[[0-9;]*m','' -replace "`n","" -replace "`r",""
               xmake g --mingw="$MINGW_INSTALL_DIR"
 
-              xmake f --unity_build=y -v --yes -m ${{ matrix.mode }} -k ${{ matrix.kind }} -p mingw
+              xmake f -v --yes -m ${{ matrix.mode }} -p mingw
             } else {
-              xmake f --unity_build=y -v --yes -m ${{ matrix.mode }} -k ${{ matrix.kind }} --vs_runtime=$VS_RUNTIME 
+              xmake f -v --yes -m ${{ matrix.mode }} --vs_runtime=$VS_RUNTIME 
             }
             xmake b -v
 
@@ -74,6 +69,6 @@ jobs:
           id: upload
           uses: actions/upload-artifact@v1
           with:
-            name: ${{ matrix.os.name }}-${{ matrix.os.compiler }}-${{ matrix.kind }}-${{ matrix.mode }}
+            name: ${{ matrix.os.name }}-${{ matrix.os.compiler }}-${{ matrix.mode }}
             path: ${{ runner.workspace }}/Module2Header_Output
  
