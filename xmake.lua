@@ -2,7 +2,8 @@ add_requires("tl_expected", { optional = true })
 add_requires("frozen")
 
 add_rules("mode.debug",
-          "mode.release")
+          "mode.release",
+          "mode.asan")
 
 target("module2header")
     set_kind("binary")

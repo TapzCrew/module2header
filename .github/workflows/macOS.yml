@@ -1,0 +1,59 @@
+name: macOS
+
+on:
+  push:
+    branches: [ develop ]
+  pull_request:
+    branches: [ develop ]
+
+jobs:
+  build:
+    name: ${{ matrix.os.name }} ( ${{matrix.os.compiler }} ${{ matrix.kind }}, ${{ matrix.mode }} )
+    runs-on: ${{ matrix.os.value }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+        - {
+           name: "macOS 11",
+           compiler: "LLVM",
+           value: macos-latest,
+           triplet: "x64-macos"
+        }
+
+        kind: [static, shared]
+        mode: [release, debug, asan]
+    steps:
+        - name: Install brew dependencies
+          run: |
+            brew update
+            brew tap apenngrace/homebrew-vulkan
+            brew install vulkan-sdk wget p7zip
+
+        - name: Install xmake
+          uses: xmake-io/github-action-setup-xmake@v1
+
+        - name: Checkout
+          uses: actions/checkout@v2
+          with:
+            fetch-depth: 0
+            
+        - name: Configure & Build
+          id: confandbuild
+          run: |
+            xrepo install -v llvm
+            $LLVM_TOOLCHAIN=xrepo info llvm | grep "installdir:" | grep -o "/"
+            xmake f --unity_build=y -v --yes -m ${{ matrix.mode }} -k ${{ matrix.kind }} --sdk=$LLVM_TOOLCHAIN 
+            xmake b -v
+
+        - name: Install
+          id: install
+          run: |
+            xmake install -v --installdir="${{ runner.workspace }}/Module2Header_Output"
+
+        - name: Upload artifacts
+          id: upload
+          uses: actions/upload-artifact@v1
+          with:
+            name: ${{ matrix.os.name }}-${{ matrix.os.compiler }}-${{ matrix.kind }}-${{ matrix.mode }}
+            path: ${{ runner.workspace }}/Module2Header_Output
