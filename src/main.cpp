@@ -7,6 +7,7 @@ import <string>;
 import <string_view>;
 import <format>;
 import <iostream>;
+import <fstream>;
 
 #if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202202L
 import <expected>;
@@ -48,6 +49,7 @@ using namespace std::literals;
 
 enum class ErrorCode {
     IOError = 0,
+    InvalidModule
 };
 
 struct Error {
@@ -59,7 +61,25 @@ template<typename T>
 using Expected = details::Expected<T, Error>;
 
 constexpr auto ERRORS_MAP = frozen::make_unordered_map<ErrorCode, std::string_view>(
-    { std::pair { ErrorCode::IOError, "IO Error"sv } });
+    { std::pair { ErrorCode::IOError, "IO Error"sv },
+      std::pair { ErrorCode::InvalidModule, "Invalid Module"sv } });
+
+#ifdef _WIN32
+    #include <windows.h>
+
+////////////////////////////////////////
+////////////////////////////////////////
+auto lastIOError() -> std::string {
+    const auto error = ::GetLastError();
+    return std::system_category().message(error);
+}
+#else
+////////////////////////////////////////
+////////////////////////////////////////
+auto lastIOError() -> std::string {
+    return std::system_category().message(errno);
+}
+#endif
 
 ////////////////////////////////////////
 ////////////////////////////////////////
@@ -68,24 +88,65 @@ constexpr auto ERRORS_MAP = frozen::make_unordered_map<ErrorCode, std::string_vi
     if (!std::filesystem::exists(path))
         return makeUnexpected(Error { ErrorCode::IOError, "File not found."s });
 
-    return "";
+    auto file = std::ifstream { path };
+    if (file.fail()) return makeUnexpected(Error { ErrorCode::IOError, lastIOError() });
+
+    return std::string { std::istreambuf_iterator<char> { file },
+                         std::istreambuf_iterator<char> {} };
+}
+
+struct Header {
+    std::string module_name;
+    std::string data;
+};
+
+////////////////////////////////////////
+////////////////////////////////////////
+[[nodiscard]] auto convertModuleToHeader(std::string_view data) noexcept -> Expected<Header> {
+    static constexpr auto EXPORT_TOKEN = "export module "sv;
+
+    const auto pos = data.find(EXPORT_TOKEN);
+    if (pos == std::string::npos)
+        return makeUnexpected(
+            Error { ErrorCode::InvalidModule, "No exported module (export module missing)"s });
+
+    const auto begin = std::begin(data) + pos + std::size(EXPORT_TOKEN);
+    const auto end   = std::find(begin, std::end(data), ';');
+    if (end == std::end(data))
+        return makeUnexpected(
+            Error { ErrorCode::InvalidModule,
+                    "Syntax error (export module line was not comma terminated)"s });
+
+    const auto module_name = std::string { begin, end };
+
+    return Header { module_name, "" };
 }
 
 ////////////////////////////////////////
 ////////////////////////////////////////
-[[nodiscard]] auto convertModuleToHeader(std::string_view data,
-                                         const std::filesystem::path& output) noexcept
-    -> Expected<std::string> {
-    auto output_is_dir = std::filesystem::is_directory(output);
+[[nodiscard]] auto saveHeaderToFile(const Header& data,
+                                    const std::filesystem::path& output) noexcept
+    -> Expected<std::filesystem::path> {
+    const auto output_is_dir = std::filesystem::is_directory(output);
 
     if (output_is_dir && !std::filesystem::exists(output))
         return makeUnexpected(Error { ErrorCode::IOError, "Directory does not exists."s });
 
-    return "";
+    const auto header_filepath = [&] {
+        auto filename = data.module_name;
+        std::ranges::replace(filename, '.', '\\');
+        filename += ".hpp";
+
+        return output / std::filesystem::path { filename };
+    }();
+
+    return header_filepath;
 }
 
-[[noreturn]] auto errorOccured(const Error& error) {
-    std::cerr << std::format("Error: {}, reason: {}", ERRORS_MAP.at(error.code), error.reason)
+////////////////////////////////////////
+////////////////////////////////////////
+[[noreturn]] auto errorOccured(const Error& error) noexcept {
+    std::cerr << std::format("{}, reason: {}", ERRORS_MAP.at(error.code), error.reason)
               << std::endl;
 
     std::quick_exit(EXIT_FAILURE);
@@ -100,8 +161,16 @@ auto main(int argc, char **argv) -> int {
     auto result = loadModuleSource(input_path);
     if (!result) errorOccured(result.error());
 
-    result = convertModuleToHeader(*result, output_path);
-    if (!result) errorOccured(result.error());
+    auto result2 = convertModuleToHeader(*result);
+    if (!result2) errorOccured(result2.error());
+
+    auto result3 = saveHeaderToFile(*result2, output_path);
+    if (!result3) errorOccured(result3.error());
+
+    std::cout << std::format("{} successfully converted to {}",
+                             input_path.string(),
+                             result3->string())
+              << std::endl;
 
     return EXIT_SUCCESS;
 }
